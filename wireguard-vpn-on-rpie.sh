@@ -1,18 +1,15 @@
 #!/bin/bash
-# Combined installation script for a secure WireGuard VPN server on a Raspberry Pi 4 for home use,
-# using No-IP for dynamic DNS and Certbot’s DNS‑01 challenge via the certbot-dns-noip plugin.
+# Installation script for a secure WireGuard VPN server on a Raspberry Pi 4 for home use,
+# using No-IP for dynamic DNS (A record updates) without SSL certificate configuration.
 #
 # This script will:
 # - Update and upgrade the system.
-# - Install WireGuard, UFW, Certbot, curl, dnsutils, python3-pip, and cron.
-# - Install the certbot-dns-noip plugin via pip3.
-# - Generate server and one client key pair.
+# - Install WireGuard, UFW, curl, cron, and dnsutils.
+# - Generate server and client key pairs.
 # - Create the WireGuard configuration with secure permissions.
 # - Enable IP forwarding and set up iptables NAT rules.
-# - Configure UFW to allow WireGuard traffic as well as HTTP/HTTPS.
-# - Set up No-IP DDNS (to update the A record) with a cron job.
-# - Create a credentials file for the DNS‑01 challenge.
-# - Obtain an SSL certificate using Certbot’s DNS‑01 challenge.
+# - Configure UFW to allow WireGuard traffic.
+# - Set up No-IP dynamic DNS (A record) with a cron job.
 # - Enable and start WireGuard.
 #
 # PLEASE EDIT THE VARIABLES AS NEEDED.
@@ -29,10 +26,7 @@ echo "Updating and upgrading the system..."
 apt update && apt upgrade -y
 
 echo "Installing required packages..."
-apt install -y wireguard wireguard-tools ufw certbot curl cron dnsutils python3-pip
-
-echo "Installing the certbot-dns-noip plugin via pip3..."
-pip3 install certbot-dns-noip
+apt install -y wireguard wireguard-tools ufw curl cron dnsutils
 
 echo "Loading WireGuard kernel module..."
 modprobe wireguard
@@ -97,13 +91,10 @@ fi
 echo "Configuring UFW firewall..."
 # Allow WireGuard UDP port.
 ufw allow 51820/udp
-# Allow HTTP and HTTPS (for general use; not required for DNS‑01 challenge).
-ufw allow 80/tcp
-ufw allow 443/tcp
 ufw --force enable
 
 # ----- No-IP DDNS Setup (for A record updates) -----
-echo "Setting up No-IP for dynamic DNS updates (A record)."
+echo "Setting up No-IP for dynamic DNS (A record) updates."
 read -p "Enter your No-IP hostname (e.g., yourdomain.no-ip.org): " NOIP_HOSTNAME
 read -p "Enter your No-IP username: " NOIP_USER
 read -p "Enter your No-IP password: " NOIP_PASSWORD
@@ -118,27 +109,6 @@ chmod +x "$NOIP_DIR/noip.sh"
 
 # Add a cron job to update No-IP every 5 minutes.
 (crontab -l 2>/dev/null; echo "*/5 * * * * $NOIP_DIR/noip.sh >/dev/null 2>&1") | crontab -
-
-# ----- Certbot DNS‑01 Challenge Setup -----
-echo "Setting up credentials for Certbot DNS‑01 challenge using No‑IP."
-# Create a credentials file for the certbot-dns-noip plugin.
-CRED_FILE="/etc/letsencrypt/noip.ini"
-cat > "$CRED_FILE" <<EOF
-dns_noip_username = $NOIP_USER
-dns_noip_password = $NOIP_PASSWORD
-EOF
-chmod 600 "$CRED_FILE"
-
-# Use the No-IP hostname as the domain for the certificate.
-DDNS_DOMAIN="$NOIP_HOSTNAME"
-read -p "Enter your email address for Certbot notifications: " CERTBOT_EMAIL
-
-echo "Obtaining an SSL certificate using Certbot with DNS‑01 challenge..."
-# The certbot command now uses the dns-noip authenticator and credentials file.
-certbot certonly --non-interactive --agree-tos --authenticator dns-noip --dns-noip-credentials "$CRED_FILE" -d "$DDNS_DOMAIN" -m "$CERTBOT_EMAIL"
-
-# Set up a cron job for certificate renewal.
-(crontab -l 2>/dev/null; echo "0 0 1 * * certbot renew --quiet") | crontab -
 
 # ----- Enable and Start WireGuard -----
 echo "Enabling and starting WireGuard service..."
@@ -159,7 +129,7 @@ DNS = 1.1.1.1
 
 [Peer]
 PublicKey = $SERVER_PUBLIC
-Endpoint = $DDNS_DOMAIN:51820
+Endpoint = $NOIP_HOSTNAME:51820
 AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 EOF
