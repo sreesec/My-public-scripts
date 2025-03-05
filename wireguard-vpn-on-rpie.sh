@@ -5,7 +5,7 @@
 # - Install WireGuard, UFW, Certbot, curl, and cron.
 # - Generate server and one client key pair.
 # - Create the WireGuard configuration with secure permissions.
-# - Enable IP forwarding and setup iptables NAT rules.
+# - Enable IP forwarding and set up iptables NAT rules.
 # - Configure UFW to allow WireGuard traffic.
 # - Set up DuckDNS DDNS with a cron job.
 # - Obtain an SSL certificate using Certbot in standalone mode.
@@ -66,7 +66,7 @@ PrivateKey = $SERVER_PRIVATE
 Address = 10.0.0.1/24
 ListenPort = 51820
 SaveConfig = true
-# NAT and forwarding rules (assumes eth0 is your internet interface)
+# NAT and forwarding rules (assumes eth0 is your internet interface; adjust if necessary)
 PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
 
@@ -76,12 +76,12 @@ PublicKey = $CLIENT_PUBLIC
 AllowedIPs = 10.0.0.2/32
 EOF
 
+chmod 600 "$WG_CONFIG"
 echo "WireGuard configuration written to $WG_CONFIG"
 
 # Enable IP forwarding.
 echo "Enabling IP forwarding..."
 sysctl -w net.ipv4.ip_forward=1
-# Ensure the setting persists.
 if ! grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf; then
     echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
 fi
@@ -113,13 +113,12 @@ read -p "Enter your full DDNS domain (e.g., yoursubdomain.duckdns.org): " DDNS_D
 read -p "Enter your email address for Certbot notifications: " CERTBOT_EMAIL
 
 echo "Stopping any service that might use port 80..."
-# If a service is running on port 80, the certbot standalone method will fail.
 systemctl stop nginx 2>/dev/null || true
 systemctl stop apache2 2>/dev/null || true
 
 certbot certonly --standalone -d "$DDNS_DOMAIN" --non-interactive --agree-tos -m "$CERTBOT_EMAIL"
 
-# Optionally, set up a cron job for certificate renewal.
+# Set up a cron job for certificate renewal.
 (crontab -l 2>/dev/null; echo "0 0 1 * * certbot renew --quiet") | crontab -
 
 # ----- Enable and Start WireGuard -----
