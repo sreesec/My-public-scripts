@@ -6,7 +6,7 @@
 # - Generate server and one client key pair.
 # - Create the WireGuard configuration with secure permissions.
 # - Enable IP forwarding and set up iptables NAT rules.
-# - Configure UFW to allow WireGuard traffic.
+# - Configure UFW to allow WireGuard traffic as well as HTTP (for Certbot) and HTTPS.
 # - Set up DuckDNS DDNS with a cron job.
 # - Obtain an SSL certificate using Certbot in standalone mode.
 # - Enable and start WireGuard.
@@ -86,9 +86,13 @@ if ! grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf; then
     echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
 fi
 
-# Setup UFW to allow WireGuard traffic.
-echo "Configuring UFW to allow UDP port 51820..."
+# Setup UFW rules.
+echo "Configuring UFW firewall..."
+# Allow WireGuard UDP port
 ufw allow 51820/udp
+# Allow HTTP and HTTPS for Certbot challenges and potential future use.
+ufw allow 80/tcp
+ufw allow 443/tcp
 ufw --force enable
 
 # ----- DuckDNS DDNS Setup -----
@@ -113,9 +117,11 @@ read -p "Enter your full DDNS domain (e.g., yoursubdomain.duckdns.org): " DDNS_D
 read -p "Enter your email address for Certbot notifications: " CERTBOT_EMAIL
 
 echo "Stopping any service that might use port 80..."
+# Stop common web servers that might bind port 80.
 systemctl stop nginx 2>/dev/null || true
 systemctl stop apache2 2>/dev/null || true
 
+# Ensure UFW is allowing port 80 (already added above) so that the challenge can complete.
 certbot certonly --standalone -d "$DDNS_DOMAIN" --non-interactive --agree-tos -m "$CERTBOT_EMAIL"
 
 # Set up a cron job for certificate renewal.
