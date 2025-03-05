@@ -7,7 +7,7 @@
 # - Create the WireGuard configuration with secure permissions.
 # - Enable IP forwarding and set up iptables NAT rules.
 # - Configure UFW to allow WireGuard traffic as well as HTTP (for Certbot) and HTTPS.
-# - Set up DuckDNS DDNS with a cron job.
+# - Set up No-IP DDNS with a cron job.
 # - Obtain an SSL certificate using Certbot in standalone mode.
 # - Enable and start WireGuard.
 #
@@ -88,32 +88,34 @@ fi
 
 # Setup UFW rules.
 echo "Configuring UFW firewall..."
-# Allow WireGuard UDP port
+# Allow WireGuard UDP port.
 ufw allow 51820/udp
 # Allow HTTP and HTTPS for Certbot challenges and potential future use.
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw --force enable
 
-# ----- DuckDNS DDNS Setup -----
-echo "Setting up DuckDNS for dynamic DNS updates."
-read -p "Enter your DuckDNS subdomain (without .duckdns.org): " DUCK_SUBDOMAIN
-read -p "Enter your DuckDNS token: " DUCK_TOKEN
+# ----- No-IP DDNS Setup -----
+echo "Setting up No-IP for dynamic DNS updates."
+read -p "Enter your No-IP hostname (e.g., yourdomain.no-ip.org): " NOIP_HOSTNAME
+read -p "Enter your No-IP username: " NOIP_USER
+read -p "Enter your No-IP password: " NOIP_PASSWORD
 
-DUCK_DIR="/opt/duckdns"
-mkdir -p "$DUCK_DIR"
-cat > "$DUCK_DIR/duck.sh" <<EOF
+NOIP_DIR="/opt/noip"
+mkdir -p "$NOIP_DIR"
+cat > "$NOIP_DIR/noip.sh" <<EOF
 #!/bin/bash
-echo url="https://www.duckdns.org/update?domains=${DUCK_SUBDOMAIN}&token=${DUCK_TOKEN}&ip=" | curl -k -o ${DUCK_DIR}/duck.log -K -
+curl -s -u "$NOIP_USER:$NOIP_PASSWORD" "http://dynupdate.no-ip.com/nic/update?hostname=${NOIP_HOSTNAME}&myip="
 EOF
-chmod +x "$DUCK_DIR/duck.sh"
+chmod +x "$NOIP_DIR/noip.sh"
 
-# Add a cron job to update DuckDNS every 5 minutes.
-(crontab -l 2>/dev/null; echo "*/5 * * * * $DUCK_DIR/duck.sh >/dev/null 2>&1") | crontab -
+# Add a cron job to update No-IP every 5 minutes.
+(crontab -l 2>/dev/null; echo "*/5 * * * * $NOIP_DIR/noip.sh >/dev/null 2>&1") | crontab -
 
 # ----- Certbot SSL Certificate -----
 echo "Obtaining an SSL certificate using Certbot."
-read -p "Enter your full DDNS domain (e.g., yoursubdomain.duckdns.org): " DDNS_DOMAIN
+# Use the No-IP hostname as the domain for the certificate.
+DDNS_DOMAIN="$NOIP_HOSTNAME"
 read -p "Enter your email address for Certbot notifications: " CERTBOT_EMAIL
 
 echo "Stopping any service that might use port 80..."
@@ -121,7 +123,6 @@ echo "Stopping any service that might use port 80..."
 systemctl stop nginx 2>/dev/null || true
 systemctl stop apache2 2>/dev/null || true
 
-# Ensure UFW is allowing port 80 (already added above) so that the challenge can complete.
 certbot certonly --standalone -d "$DDNS_DOMAIN" --non-interactive --agree-tos -m "$CERTBOT_EMAIL"
 
 # Set up a cron job for certificate renewal.
